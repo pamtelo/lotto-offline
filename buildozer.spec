@@ -42,7 +42,7 @@ android.accept_sdk_license = True
 # Galaxy S24 / Fold 등 최근 기기는 64비트 전용. 구형 32비트 기기까지 지원하려면 armeabi-v7a 추가
 android.archs = arm64-v8a
 android.allow_backup = True
-p4a.branch = master
+p4a.branch = v2024.01.21
 
 [buildozer]
 log_level = 2
