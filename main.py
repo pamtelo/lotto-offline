@@ -705,6 +705,12 @@ KV = """
                             size_hint_y: None
                             height: self.minimum_height
 
+    Label:
+    text: 'Developed by Han.K'
+    font_size: '11sp'
+    color: C_HINT
+    size_hint_y: None
+    height: sp(20)
     BoxLayout:
         size_hint_y: None
         height: dp(46) + sp(18)
