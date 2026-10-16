@@ -294,6 +294,14 @@ KV = """
             size: self.size
             radius: [self.height / 2]
 
+<FooterText@Label>:
+    font_size: '11sp'
+    color: C_SUB
+    size_hint_y: None
+    height: self.texture_size[1]
+    text_size: self.width, None
+    halign: 'center'
+
 <SectionTitle@Label>:
     font_size: '17sp'
     bold: True
@@ -705,12 +713,19 @@ KV = """
                             size_hint_y: None
                             height: self.minimum_height
 
-    Label:
-    text: 'Developed by Han.K'
-    font_size: '11sp'
-    color: C_HINT
-    size_hint_y: None
-    height: sp(20)
+    BoxLayout:
+        orientation: 'vertical'
+        size_hint_y: None
+        height: self.minimum_height
+        padding: dp(20) + root.gutter, dp(4), dp(20) + root.gutter, dp(6)
+        spacing: dp(2)
+        FooterText:
+            text: 'Developed by Han.K'
+            font_name: app.font_emphasis
+        FooterText:
+            text: '개발자 외 APP 사용중 로또 당첨시 당첨금의 10%를 사용료로 지급하는 것에 동의합니다.'
+            font_size: '10sp'
+
     BoxLayout:
         size_hint_y: None
         height: dp(46) + sp(18)
