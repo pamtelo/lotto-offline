@@ -363,26 +363,38 @@ class LottoEngine:
     # -------------------------------------------------------- prediction
     def predict_scores(self):
         """1~45번 각각의 다음 회차 출현 점수(길이 45 배열, index 0 = 1번)."""
+        return self._predict()[0]
+
+    def _predict(self):
+        """(scores, 점수를 만든 백엔드 이름, 학습 회차 수)."""
         draws = self.storage.get_number_matrix()
         P = presence_matrix(draws)
         next_features = build_feature_tensor(P)[-1]
         with self._model_lock:
-            model = self._model
+            model, meta = self._model, self._meta
         if model is not None:
             try:
-                return np.asarray(model.predict(next_features), dtype=np.float64)
+                scores = np.asarray(model.predict(next_features), dtype=np.float64)
+                return scores, model.name, meta.get("trained_draws")
             except Exception:
                 pass
         # 모델 준비 전(최초 학습 중) 휴리스틱 점수
         f = next_features
-        return 0.4 * f[:, 4] + 0.3 * f[:, 2] / 20 + 0.2 * f[:, 1] / 10 + 0.1 * f[:, 0] / 5
+        scores = 0.4 * f[:, 4] + 0.3 * f[:, 2] / 20 + 0.2 * f[:, 1] / 10 + 0.1 * f[:, 0] / 5
+        return scores, "heuristic", len(draws)
 
     def generate_recommendations(self, n_games=5, save=True, rng=None):
-        """(target_draw_no, games, scores) 반환. games: [[6개 오름차순], ...]."""
-        scores = self.predict_scores()
+        """
+        (target_draw_no, games, scores, rec_id) 반환. games: [[6개 오름차순], ...].
+        save=True 면 추천 시점의 45개 점수·모델 정보까지 저장해 나중에 정직하게 채점할 수 있게 한다.
+        """
+        scores, backend, trained_draws = self._predict()
         weights = normalize_scores(scores)
         games = weighted_games(weights, n_games=n_games, rng=rng)
         target = self.storage.latest_draw_no() + 1
+        rec_id = None
         if save:
-            self.storage.save_recommendation(target, games)
-        return target, games, scores
+            rec_id = self.storage.save_recommendation(
+                target, games, scores=scores, model_backend=backend, trained_draws=trained_draws
+            )
+        return target, games, scores, rec_id

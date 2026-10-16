@@ -11,6 +11,12 @@ from contextlib import contextmanager
 NUM_MIN, NUM_MAX, PICK = 1, 45, 6
 SEED_DRAW_COUNT = 50
 SEED_CSV_NAME = "seed_history.csv"
+REC_EXTRA_COLUMNS = [
+    ("scores_json", "TEXT"),
+    ("model_backend", "TEXT"),
+    ("trained_draws", "INTEGER"),
+    ("is_confirmed", "INTEGER NOT NULL DEFAULT 0"),
+]
 
 
 class ValidationError(ValueError):
@@ -121,8 +127,28 @@ class LottoStorage:
                 );
                 CREATE INDEX IF NOT EXISTS idx_rec_target
                     ON recommendations(target_draw_no);
+                CREATE TABLE IF NOT EXISTS evaluations (
+                    draw_no               INTEGER PRIMARY KEY,
+                    recommendation_id     INTEGER,
+                    confirmed             INTEGER NOT NULL DEFAULT 0,
+                    numbers_json          TEXT NOT NULL,
+                    bonus                 INTEGER,
+                    games_json            TEXT NOT NULL,
+                    hits_json             TEXT NOT NULL,
+                    ranks_json            TEXT NOT NULL,
+                    winner_positions_json TEXT,
+                    auc                   REAL,
+                    model_backend         TEXT,
+                    trained_draws         INTEGER,
+                    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
                 """
             )
+            # 이전 버전 DB 에는 없는 컬럼을 추가 (추천 시점의 45개 점수·모델 정보·확정 여부)
+            existing = {r["name"] for r in conn.execute("PRAGMA table_info(recommendations)")}
+            for name, decl in REC_EXTRA_COLUMNS:
+                if name not in existing:
+                    conn.execute(f"ALTER TABLE recommendations ADD COLUMN {name} {decl}")
             conn.commit()
 
     # ---------------------------------------------------------------- seed
@@ -225,13 +251,37 @@ class LottoStorage:
         return [list(r) for r in rows]
 
     # ------------------------------------------------------- recommendations
-    def save_recommendation(self, target_draw_no, games):
+    def save_recommendation(self, target_draw_no, games, scores=None,
+                            model_backend=None, trained_draws=None):
+        """추천 5게임과 그 시점의 45개 점수·모델 정보를 저장하고 id 반환."""
         with self._lock, self._connect() as conn:
             with conn:
-                conn.execute(
-                    "INSERT INTO recommendations (target_draw_no, games_json) VALUES (?, ?)",
-                    (int(target_draw_no), json.dumps(games)),
+                cur = conn.execute(
+                    "INSERT INTO recommendations "
+                    "(target_draw_no, games_json, scores_json, model_backend, trained_draws) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        int(target_draw_no),
+                        json.dumps(games),
+                        json.dumps([round(float(s), 6) for s in scores]) if scores is not None else None,
+                        model_backend,
+                        trained_draws,
+                    ),
                 )
+                return cur.lastrowid
+
+    @staticmethod
+    def _rec_to_dict(row):
+        return {
+            "id": row["id"],
+            "target_draw_no": row["target_draw_no"],
+            "games": json.loads(row["games_json"]),
+            "scores": json.loads(row["scores_json"]) if row["scores_json"] else None,
+            "model_backend": row["model_backend"],
+            "trained_draws": row["trained_draws"],
+            "is_confirmed": bool(row["is_confirmed"]),
+            "created_at": row["created_at"],
+        }
 
     def latest_recommendation(self, target_draw_no=None):
         sql = "SELECT * FROM recommendations"
@@ -242,10 +292,85 @@ class LottoStorage:
         sql += " ORDER BY id DESC LIMIT 1"
         with self._connect() as conn:
             row = conn.execute(sql, params).fetchone()
-        if not row:
-            return None
+        return self._rec_to_dict(row) if row else None
+
+    def confirm_recommendation(self, rec_id):
+        """해당 추천을 그 회차의 확정 세트로 지정 (회차당 하나만 확정)."""
+        with self._lock, self._connect() as conn:
+            with conn:
+                row = conn.execute(
+                    "SELECT target_draw_no FROM recommendations WHERE id = ?", (int(rec_id),)
+                ).fetchone()
+                if not row:
+                    raise ValidationError("확정할 추천을 찾을 수 없습니다.")
+                conn.execute(
+                    "UPDATE recommendations SET is_confirmed = (id = ?) WHERE target_draw_no = ?",
+                    (int(rec_id), row["target_draw_no"]),
+                )
+
+    def official_recommendation(self, target_draw_no):
+        """
+        채점 기준 추천: 확정한 세트, 없으면 그 회차에 학습된 모델로 만든 첫 추천,
+        그것도 없으면 첫 추천. 여러 번 다시 뽑아도 성적이 부풀지 않도록 '마지막'이 아닌 '처음'을 쓴다.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM recommendations WHERE target_draw_no = ? "
+                "ORDER BY is_confirmed DESC, (model_backend = 'heuristic') ASC, id ASC LIMIT 1",
+                (int(target_draw_no),),
+            ).fetchone()
+        return self._rec_to_dict(row) if row else None
+
+    # ----------------------------------------------------------- evaluations
+    def save_evaluation(self, ev):
+        with self._lock, self._connect() as conn:
+            with conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO evaluations (draw_no, recommendation_id, confirmed, "
+                    "numbers_json, bonus, games_json, hits_json, ranks_json, "
+                    "winner_positions_json, auc, model_backend, trained_draws) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        ev["draw_no"],
+                        ev["recommendation_id"],
+                        int(ev["confirmed"]),
+                        json.dumps(ev["numbers"]),
+                        ev["bonus"],
+                        json.dumps(ev["games"]),
+                        json.dumps(ev["hits"]),
+                        json.dumps(ev["ranks"]),
+                        json.dumps(ev["winner_positions"]) if ev["winner_positions"] else None,
+                        ev["auc"],
+                        ev["model_backend"],
+                        ev["trained_draws"],
+                    ),
+                )
+
+    @staticmethod
+    def _eval_to_dict(row):
         return {
-            "target_draw_no": row["target_draw_no"],
+            "draw_no": row["draw_no"],
+            "recommendation_id": row["recommendation_id"],
+            "confirmed": bool(row["confirmed"]),
+            "numbers": json.loads(row["numbers_json"]),
+            "bonus": row["bonus"],
             "games": json.loads(row["games_json"]),
+            "hits": json.loads(row["hits_json"]),
+            "ranks": json.loads(row["ranks_json"]),
+            "winner_positions": (
+                json.loads(row["winner_positions_json"]) if row["winner_positions_json"] else None
+            ),
+            "auc": row["auc"],
+            "model_backend": row["model_backend"],
+            "trained_draws": row["trained_draws"],
             "created_at": row["created_at"],
         }
+
+    def list_evaluations(self, limit=None):
+        sql = "SELECT * FROM evaluations ORDER BY draw_no DESC"
+        params = ()
+        if limit:
+            sql += " LIMIT ?"
+            params = (int(limit),)
+        with self._connect() as conn:
+            return [self._eval_to_dict(r) for r in conn.execute(sql, params)]

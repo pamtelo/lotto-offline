@@ -86,6 +86,12 @@ def make_tab_icons(size=96):
                             radius=w / 2, fill=white)
     finish(img, size, size, "tab_manage.png")
 
+    img, d = canvas(size, size)
+    bw = S * 0.17
+    for x, top in [(0.2, 0.52), (0.415, 0.3), (0.63, 0.12)]:
+        d.rounded_rectangle((S * x, S * top, S * x + bw, S * 0.86), radius=bw * 0.3, fill=white)
+    finish(img, size, size, "tab_report.png")
+
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)

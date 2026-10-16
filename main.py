@@ -14,6 +14,7 @@ from kivy.app import App
 from kivy.clock import mainthread
 from kivy.core.text import DEFAULT_FONT, LabelBase
 from kivy.core.window import Window
+from kivy.factory import Factory
 from kivy.lang import Builder
 from kivy.metrics import dp
 from kivy.properties import (
@@ -28,6 +29,7 @@ from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 
+import evaluation as ev_mod
 from ml_engine import PICK, LottoEngine
 from storage import LottoStorage, ValidationError
 
@@ -36,10 +38,13 @@ ASSET_DIR = os.path.join(APP_DIR, "assets")
 FONT_DIR = os.path.join(APP_DIR, "fonts")
 GAME_LABELS = "ABCDE"
 HISTORY_LIMIT = 30
+EVAL_HISTORY_LIMIT = 30
 
 C_BG = (0.949, 0.957, 0.965, 1)       # #F2F4F6
 C_ERROR = (0.941, 0.267, 0.322, 1)    # #F04452
 C_SUCCESS = (0.012, 0.698, 0.424, 1)  # #03B26C
+C_DIM_BALL = [0.929, 0.937, 0.945, 1]  # 맞히지 못한 번호
+C_DIM_TEXT = (0.690, 0.722, 0.757, 1)
 
 SYSTEM_FONTS = [
     "/system/fonts/NotoSansCJK-Regular.ttc",           # Android
@@ -274,6 +279,151 @@ KV = """
             size: self.size
             radius: [self.height / 2]
 
+<ChipButton>:
+    size_hint: None, None
+    size: self.texture_size[0] + dp(26), max(dp(34), self.texture_size[1] + dp(14))
+    pos_hint: {'center_y': 0.5}
+    font_size: '13sp'
+    font_name: app.font_emphasis
+    color: (1, 1, 1, 1) if self.active else C_PRIMARY
+    canvas.before:
+        Color:
+            rgba: (C_PRIMARY_DARK if self.state == 'down' else C_PRIMARY) if self.active else (C_LINE if self.state == 'down' else C_PRIMARY_SOFT)
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [self.height / 2]
+
+<SectionTitle@Label>:
+    font_size: '17sp'
+    bold: True
+    size_hint_y: None
+    height: max(sp(24), self.texture_size[1])
+    text_size: self.width, None
+    halign: 'left'
+    valign: 'middle'
+
+<NoteBox@Label>:
+    font_size: '13sp'
+    color: C_SUB
+    size_hint_y: None
+    text_size: self.width - dp(28), None
+    height: self.texture_size[1] + dp(22) if self.text else 0
+    halign: 'left'
+    canvas.before:
+        Color:
+            rgba: C_BG
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(12)]
+
+<MetricRow>:
+    size_hint_y: None
+    height: max(sp(30) if root.header else sp(44), title_label.texture_size[1] + dp(14))
+    spacing: dp(8)
+    canvas.after:
+        Color:
+            rgba: C_LINE
+        Line:
+            points: self.x, self.y, self.right, self.y
+    Label:
+        id: title_label
+        text: root.title
+        font_size: '12sp' if root.header else '14sp'
+        color: C_SUB if root.header else C_TEXT
+        text_size: self.width, None
+        halign: 'left'
+        valign: 'middle'
+    Label:
+        text: root.value
+        size_hint_x: None
+        width: sp(72)
+        font_size: '12sp' if root.header else '16sp'
+        font_name: app.font_emphasis
+        color: C_SUB if root.header else C_PRIMARY
+        text_size: self.size
+        halign: 'right'
+        valign: 'middle'
+    Label:
+        text: root.baseline
+        size_hint_x: None
+        width: sp(64)
+        font_size: '12sp' if root.header else '14sp'
+        color: C_SUB
+        text_size: self.size
+        halign: 'right'
+        valign: 'middle'
+
+<EvalGameRow>:
+    size_hint_y: None
+    height: dp(40)
+    spacing: dp(10)
+    Label:
+        text: root.label
+        size_hint: None, None
+        size: sp(26), sp(26)
+        pos_hint: {'center_y': 0.5}
+        font_name: app.font_emphasis
+        font_size: '13sp'
+        color: C_PRIMARY
+        canvas.before:
+            Color:
+                rgba: C_PRIMARY_SOFT
+            RoundedRectangle:
+                pos: self.pos
+                size: self.size
+                radius: [dp(8)]
+    BoxLayout:
+        id: balls
+        spacing: dp(4)
+    Label:
+        text: root.result
+        size_hint_x: None
+        width: sp(70)
+        font_size: '13sp'
+        font_name: app.font_emphasis
+        color: C_PRIMARY if root.won else C_SUB
+        text_size: self.size
+        halign: 'right'
+        valign: 'middle'
+
+<EvalHistoryRow>:
+    size_hint_y: None
+    height: max(sp(44), detail_label.texture_size[1] + dp(14))
+    spacing: dp(8)
+    canvas.after:
+        Color:
+            rgba: C_LINE
+        Line:
+            points: self.x, self.y, self.right, self.y
+    Label:
+        text: root.draw_text
+        size_hint_x: None
+        width: sp(58)
+        font_name: app.font_emphasis
+        font_size: '14sp'
+        text_size: self.size
+        halign: 'left'
+        valign: 'middle'
+    Label:
+        text: root.result
+        font_size: '14sp'
+        color: C_PRIMARY if root.won else C_TEXT
+        text_size: self.size
+        halign: 'left'
+        valign: 'middle'
+    Label:
+        id: detail_label
+        text: root.detail
+        size_hint_x: None
+        width: sp(118)
+        font_size: '12sp'
+        color: C_SUB
+        text_size: self.width, None
+        halign: 'right'
+        valign: 'middle'
+
 <TabItem>:
     orientation: 'vertical'
     padding: 0, dp(9), 0, dp(7)
@@ -336,22 +486,37 @@ KV = """
                         text_size: self.size
                         halign: 'left'
                         valign: 'middle'
-                    Label:
-                        text: '이번 주 추천 번호'
-                        font_size: '24sp'
-                        bold: True
+                    BoxLayout:
                         size_hint_y: None
-                        height: sp(36)
-                        text_size: self.size
-                        halign: 'left'
-                        valign: 'middle'
+                        height: max(sp(36), confirm_chip.height)
+                        spacing: dp(8)
+                        Label:
+                            text: '이번 주 추천 번호'
+                            font_size: '24sp'
+                            bold: True
+                            text_size: self.size
+                            halign: 'left'
+                            valign: 'middle'
+                        ChipButton:
+                            id: confirm_chip
+                            text: '확정 완료' if app.rec_confirmed else '이 번호로 확정'
+                            active: app.rec_confirmed
+                            on_release: app.on_confirm()
                     Label:
                         id: rec_status
                         text: app.rec_caption
                         font_size: '13sp'
                         color: C_SUB
                         size_hint_y: None
-                        height: self.texture_size[1] + dp(6)
+                        height: self.texture_size[1] + dp(4)
+                        text_size: self.width, None
+                        halign: 'left'
+                    Label:
+                        text: app.confirm_caption
+                        font_size: '12sp'
+                        color: C_PRIMARY if app.rec_confirmed else C_SUB
+                        size_hint_y: None
+                        height: self.texture_size[1] + dp(4)
                         text_size: self.width, None
                         halign: 'left'
                 ScrollView:
@@ -487,6 +652,59 @@ KV = """
                             size_hint_y: None
                             height: self.minimum_height
 
+        Screen:
+            name: 'report'
+            ScrollView:
+                do_scroll_x: False
+                bar_width: dp(3)
+                BoxLayout:
+                    id: report_box
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    height: self.minimum_height
+                    padding: dp(16) + root.gutter, dp(4), dp(16) + root.gutter, dp(16)
+                    spacing: dp(14)
+                    Card:
+                        size_hint_y: None
+                        height: self.minimum_height
+                        SectionTitle:
+                            text: '누적 성적'
+                        Caption:
+                            text: app.report_caption
+                        GridLayout:
+                            id: metrics_box
+                            cols: 1
+                            size_hint_y: None
+                            height: self.minimum_height
+                        NoteBox:
+                            text: app.report_note
+                    Card:
+                        id: latest_card
+                        size_hint_y: None
+                        height: self.minimum_height
+                        SectionTitle:
+                            text: app.latest_title
+                        Caption:
+                            text: app.latest_caption
+                        GridLayout:
+                            id: latest_box
+                            cols: 1
+                            spacing: dp(2)
+                            size_hint_y: None
+                            height: self.minimum_height
+                    Card:
+                        id: eval_history_card
+                        spacing: dp(4)
+                        size_hint_y: None
+                        height: self.minimum_height
+                        SectionTitle:
+                            text: '회차별 기록'
+                        GridLayout:
+                            id: eval_history_box
+                            cols: 1
+                            size_hint_y: None
+                            height: self.minimum_height
+
     BoxLayout:
         size_hint_y: None
         height: dp(46) + sp(18)
@@ -511,6 +729,11 @@ KV = """
             text: '당첨 번호 관리'
             active: sm.current == 'manage'
             on_release: sm.current = 'manage'
+        TabItem:
+            icon: app.asset('tab_report.png')
+            text: '성적표'
+            active: sm.current == 'report'
+            on_release: sm.current = 'report'
 """
 
 
@@ -564,10 +787,46 @@ class HistoryRow(BoxLayout):
 
     @staticmethod
     def _small_ball(n):
-        # 생성자 kwargs 는 KV 규칙의 dp() 표현식에 덮어써지므로 생성 후 지정
-        ball = Ball(number=n)
-        ball.size = (dp(26), dp(26))
-        return ball
+        return small_ball(n, dp(26))
+
+
+def small_ball(n, size, dim=False):
+    # 생성자 kwargs 는 KV 규칙의 dp() 표현식에 덮어써지므로 생성 후 지정
+    ball = Ball(number=n)
+    ball.size = (size, size)
+    if dim:
+        ball.ball_color = C_DIM_BALL
+        ball.color = C_DIM_TEXT
+    return ball
+
+
+class ChipButton(ButtonBehavior, Label):
+    active = BooleanProperty(False)
+
+
+class MetricRow(BoxLayout):
+    title = StringProperty("")
+    value = StringProperty("")
+    baseline = StringProperty("")
+    header = BooleanProperty(False)
+
+
+class EvalGameRow(BoxLayout):
+    label = StringProperty("")
+    result = StringProperty("")
+    won = BooleanProperty(False)
+
+    def __init__(self, game, winning, **kwargs):
+        super().__init__(**kwargs)
+        for n in game:
+            self.ids.balls.add_widget(small_ball(n, dp(28), dim=n not in winning))
+
+
+class EvalHistoryRow(BoxLayout):
+    draw_text = StringProperty("")
+    result = StringProperty("")
+    detail = StringProperty("")
+    won = BooleanProperty(False)
 
 
 class TabItem(ButtonBehavior, BoxLayout):
@@ -602,6 +861,12 @@ class LottoApp(App):
     target_label = StringProperty("")
     rec_caption = StringProperty("")
     history_caption = StringProperty("")
+    rec_confirmed = BooleanProperty(False)
+    confirm_caption = StringProperty("")
+    report_caption = StringProperty("")
+    report_note = StringProperty("")
+    latest_title = StringProperty("")
+    latest_caption = StringProperty("")
     font_emphasis = StringProperty(EMPHASIS_FONT)
     max_content_width = NumericProperty(560)  # dp
 
@@ -614,18 +879,25 @@ class LottoApp(App):
         )
         self.engine = LottoEngine(self.storage, self.user_data_dir)
         self._regen_after_train = False
+        self._save_summary = ""
+        self.current_rec_id = None
+        self.current_target = None
         self.root_view = RootView()
+        # ids 는 약한 참조라, 빈 성적표일 때 트리에서 떼어 두는 카드는 강한 참조로 붙잡아 둔다
+        ids = self.root_view.ids
+        self._report_cards = (ids.latest_card.__self__, ids.eval_history_card.__self__)
         return self.root_view
 
     def on_start(self):
         model_loaded = self.engine.load_model()
         self.refresh_history()
+        self.refresh_report()
         self.reset_draw_input()
 
         target = self.storage.latest_draw_no() + 1
         saved = self.storage.latest_recommendation(target)
         if saved and model_loaded:
-            self.show_recommendations(target, saved["games"])
+            self.show_recommendations(target, saved["games"], saved["id"])
         else:
             self.on_new_recommendation()
 
@@ -636,10 +908,11 @@ class LottoApp(App):
 
     # ------------------------------------------------------------ recommend
     def on_new_recommendation(self):
-        target, games, _ = self.engine.generate_recommendations(n_games=5)
-        self.show_recommendations(target, games)
+        target, games, _, rec_id = self.engine.generate_recommendations(n_games=5)
+        self.show_recommendations(target, games, rec_id)
 
-    def show_recommendations(self, target, games):
+    def show_recommendations(self, target, games, rec_id):
+        self.current_target, self.current_rec_id = target, rec_id
         self.target_label = f"다음 회차 · {target}회"
         box = self.root_view.ids.games_box
         box.clear_widgets()
@@ -647,6 +920,24 @@ class LottoApp(App):
             row = GameRow(label=label)
             row.numbers = game
             box.add_widget(row)
+        self.update_confirm_state()
+
+    def on_confirm(self):
+        if self.current_rec_id is None or self.rec_confirmed:
+            return
+        self.storage.confirm_recommendation(self.current_rec_id)
+        self.update_confirm_state()
+
+    def update_confirm_state(self):
+        official = self.storage.official_recommendation(self.current_target)
+        other_confirmed = bool(official and official["is_confirmed"])
+        self.rec_confirmed = other_confirmed and official["id"] == self.current_rec_id
+        if self.rec_confirmed:
+            self.confirm_caption = f"{self.current_target}회 성적은 이 5게임으로 매겨요"
+        elif other_confirmed:
+            self.confirm_caption = "앞서 확정한 다른 세트로 채점해요. 이 세트로 바꾸려면 확정을 누르세요"
+        else:
+            self.confirm_caption = "확정하지 않으면 이 회차에 처음 받은 추천으로 채점해요"
 
     def update_status(self):
         self.is_training = self.engine.is_training
@@ -678,9 +969,10 @@ class LottoApp(App):
                 self._regen_after_train = False
                 self.on_new_recommendation()
             self.set_manage_status(
-                f"재학습 완료 · {meta['backend']} · 샘플 {meta['samples']:,}개 · "
-                f"{meta['train_seconds']}초"
+                f"{self._save_summary}재학습 완료 · {meta['backend']} · "
+                f"샘플 {meta['samples']:,}개 · {meta['train_seconds']}초"
             )
+            self._save_summary = ""
         self.update_status()
 
     @mainthread
@@ -710,18 +1002,19 @@ class LottoApp(App):
         self.refresh_history()
         self.reset_draw_input()
 
-        msg = f"{draw_no}회차 저장 완료. {self._hit_summary(draw_no, nums)}학습 진행 중..."
-        self.set_manage_status(msg)
+        # 재학습이 모델을 바꾸기 전에, 추천 시점에 저장해 둔 결과로 채점한다
+        self._save_summary = f"{draw_no}회차 저장 완료. {self._score_draw(draw_no, nums, bonus)}"
+        self.set_manage_status(f"{self._save_summary}학습 진행 중...")
         self.start_retrain(regenerate=True)
 
-    def _hit_summary(self, draw_no, nums):
-        """해당 회차에 대해 앱이 마지막으로 추천했던 5게임의 적중 개수."""
-        rec = self.storage.latest_recommendation(draw_no)
+    def _score_draw(self, draw_no, nums, bonus):
+        rec = self.storage.official_recommendation(draw_no)
         if not rec:
-            return ""
-        hits = [len(set(g) & set(nums)) for g in rec["games"]]
-        parts = " ".join(f"{GAME_LABELS[i]}:{h}" for i, h in enumerate(hits))
-        return f"[지난 추천 적중 {parts}] "
+            return "이 회차는 미리 받은 추천이 없어 채점하지 않았어요. "
+        ev = ev_mod.evaluate_draw(draw_no, nums, bonus, rec)
+        self.storage.save_evaluation(ev)
+        self.refresh_report()
+        return f"추천 채점: {ev_mod.best_result_text(ev)} (성적표 탭 참고). "
 
     def set_manage_status(self, text, error=False):
         label = self.root_view.ids.manage_status
@@ -737,6 +1030,109 @@ class LottoApp(App):
         box.clear_widgets()
         for draw in self.storage.list_draws(limit=HISTORY_LIMIT):
             box.add_widget(HistoryRow(draw))
+
+    # ---------------------------------------------------------------- report
+    def refresh_report(self):
+        ids = self.root_view.ids
+        evals = self.storage.list_evaluations()
+        summary = ev_mod.summarize(evals)
+
+        metrics = ids.metrics_box
+        metrics.clear_widgets()
+        for card in self._report_cards:
+            if card.parent:
+                card.parent.remove_widget(card)
+
+        if not summary:
+            self.report_caption = "추천을 받은 회차의 당첨 번호를 입력하면 자동으로 채점돼요"
+            self.report_note = (
+                "추천 화면의 5게임을 그 회차가 끝난 뒤 당첨 번호와 비교합니다. "
+                "확정한 세트가 있으면 그것으로, 없으면 그 회차에 처음 받은 추천으로 채점해 "
+                "여러 번 다시 뽑아 성적을 부풀릴 수 없어요."
+            )
+            return
+
+        self.report_caption = (
+            f"{summary['draws']}회차 · {summary['games']}게임 채점 "
+            f"(확정 {summary['confirmed_draws']}회) · 같은 조건의 무작위 추천과 비교"
+        )
+        rows = [
+            ("", "이 앱", "무작위", True),
+            ("게임당 평균 적중", f"{summary['hits_per_game']:.2f}개",
+             f"{ev_mod.RANDOM_HITS_PER_GAME:.2f}개", False),
+            ("5등 이상 비율", f"{summary['prize_rate']:.1%}",
+             f"{ev_mod.RANDOM_PRIZE_RATE:.1%}", False),
+        ]
+        if summary["auc"] is not None:
+            rows += [
+                ("당첨 번호 점수 순위 AUC", f"{summary['auc']:.3f}",
+                 f"{ev_mod.RANDOM_AUC:.3f}", False),
+                (f"상위 {ev_mod.TOP_K}위 안 당첨 번호", f"{summary['top_k']:.2f}개",
+                 f"{ev_mod.RANDOM_TOP_K:.2f}개", False),
+            ]
+        for title, value, baseline, header in rows:
+            metrics.add_widget(MetricRow(title=title, value=value, baseline=baseline, header=header))
+        self.report_note = self._report_note(summary)
+
+        latest = evals[0]
+        self.latest_title = f"{latest['draw_no']}회 채점 결과"
+        basis = "확정한 세트" if latest["confirmed"] else "확정 없음 · 처음 받은 추천"
+        self.latest_caption = f"{basis} 기준 · {ev_mod.best_result_text(latest)}"
+        box = ids.latest_box
+        box.clear_widgets()
+        box.add_widget(HistoryRow({"draw_no": latest["draw_no"], "numbers": latest["numbers"],
+                                   "bonus": latest["bonus"]}))
+        winning = set(latest["numbers"])
+        for label, game, hits, rank in zip(GAME_LABELS, latest["games"],
+                                           latest["hits"], latest["ranks"]):
+            result = f"{hits}개 · {ev_mod.PRIZE_NAMES[rank]}" if rank else f"{hits}개"
+            box.add_widget(EvalGameRow(game, winning, label=label, result=result, won=bool(rank)))
+        if latest["winner_positions"]:
+            positions = " · ".join(str(p) for p in sorted(latest["winner_positions"]))
+            box.add_widget(Factory.Caption(
+                text=f"당첨 번호의 모델 점수 순위: {positions}위 "
+                     f"(무작위라면 평균 {ev_mod.RANDOM_MEAN_POSITION:.0f}위)",
+                padding=(0, dp(8), 0, 0),
+            ))
+
+        history = ids.eval_history_box
+        history.clear_widgets()
+        for ev in evals[:EVAL_HISTORY_LIMIT]:
+            avg = sum(ev["hits"]) / len(ev["hits"])
+            detail = f"평균 {avg:.1f}개"
+            if ev["auc"] is not None:
+                detail += f" · AUC {ev['auc']:.2f}"
+            history.add_widget(EvalHistoryRow(
+                draw_text=f"{ev['draw_no']}회",
+                result=("확정 · " if ev["confirmed"] else "")
+                + ev_mod.best_result_text(ev).replace(" 적중", ""),
+                detail=detail,
+                won=any(ev["ranks"]),
+            ))
+
+        for card in self._report_cards:
+            ids.report_box.add_widget(card)
+
+    @staticmethod
+    def _report_note(summary):
+        diff = summary["hits_per_game"] - ev_mod.RANDOM_HITS_PER_GAME
+        band = ev_mod.hits_noise_band(summary["games"])
+        if not summary["reliable"]:
+            return (
+                f"아직 {summary['draws']}회차뿐이라 판단하기 일러요. "
+                f"{ev_mod.MIN_RELIABLE_DRAWS}회차 이상 쌓였을 때 무작위 열과 비교해 보세요. "
+                "매 회차는 독립적인 추첨이라 무작위와 비슷하게 나오는 것이 정상이에요."
+            )
+        if abs(diff) <= band:
+            return (
+                f"게임당 적중 차이 {diff:+.2f}개는 무작위로 골라도 생기는 범위(±{band:.2f}) 안이에요. "
+                "모델이 무작위보다 낫다고 볼 근거는 아직 없어요."
+            )
+        direction = "높아요" if diff > 0 else "낮아요"
+        return (
+            f"게임당 적중이 무작위보다 {abs(diff):.2f}개 {direction}(우연 범위 ±{band:.2f} 밖). "
+            "다만 추첨은 독립 시행이라 다음 회차까지 이어진다는 보장은 없어요."
+        )
 
 
 if __name__ == "__main__":
