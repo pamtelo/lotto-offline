@@ -4,7 +4,7 @@ package.name = lottooffline
 package.domain = org.yongseok
 source.dir = .
 source.include_exts = py,png,jpg,kv,json,csv,ttf,ttc,otf,txt
-source.exclude_dirs = bin,.buildozer,__pycache__,venv,.venv,tools
+source.exclude_dirs = bin,.buildozer,__pycache__,venv,.venv,tools,p4a-recipes,build,build-log
 source.exclude_patterns = requirements.txt,README.md
 version = 1.0.0
 
@@ -42,7 +42,11 @@ android.accept_sdk_license = True
 # Galaxy S24 / Fold 등 최근 기기는 64비트 전용. 구형 32비트 기기까지 지원하려면 armeabi-v7a 추가
 android.archs = arm64-v8a
 android.allow_backup = True
+# master 는 hostpython 3.14 / Kivy 2.3.1 패치 / numpy 2.x(meson) / NDK 28c 로 바뀌어 이 설정과 맞지 않는다.
+# v2024.01.21 = NDK 25b + Kivy 2.3.0 + Python 3.11 + numpy 1.22 조합으로 고정.
 p4a.branch = v2024.01.21
+# numpy 를 병렬(-j) 없이 빌드하는 로컬 레시피 (병렬 빌드 시 lapack_lite 링크가 간헐적으로 깨짐)
+p4a.local_recipes = ./p4a-recipes
 
 [buildozer]
 log_level = 2
