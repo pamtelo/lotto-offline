@@ -11,13 +11,13 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -30,22 +30,42 @@ jobs:
             zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 \
             libffi-dev libssl-dev lld
 
+      # buildozer.spec 의 p4a v2024.01.21 과 같은 시기의 buildozer / Cython 으로 고정
       - name: Install buildozer
-        run: pip install --upgrade buildozer "cython<3" setuptools
+        run: pip install "buildozer==1.5.0" "cython==0.29.36" setuptools
 
       # Android SDK/NDK 다운로드(수 GB)를 다음 빌드부터 재사용
       - name: Cache Android SDK/NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.buildozer
           key: buildozer-home-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: buildozer-home-${{ runner.os }}-
 
       - name: Build debug APK
-        run: yes | buildozer -v android debug
+        run: |
+          set -o pipefail
+          yes | buildozer -v android debug 2>&1 | tee build.log
+
+      - name: Show errors on failure
+        if: failure()
+        run: |
+          {
+            echo '### Build errors (last 60 matches)'
+            echo '```'
+            grep -n -iE "error:|FAILED|Traceback|Exception|Command failed" build.log | tail -n 60 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-log
+          path: build.log
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lotto-offline-apk
           path: bin/*.apk
