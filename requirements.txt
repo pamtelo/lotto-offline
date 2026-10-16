@@ -1,0 +1,6 @@
+# 데스크톱(Windows/macOS/Linux) 개발·테스트용
+kivy==2.3.0
+numpy
+xgboost
+# scikit-learn   # MODEL_BACKEND = "sklearn" 사용 시
+pillow           # tools/make_assets.py (아이콘 재생성) 전용, 앱 실행에는 불필요

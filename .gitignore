@@ -1,0 +1,10 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.buildozer/
+bin/
+
+# DRM 보안 문서 / Office 임시 파일은 업로드하지 않는다
+*.xlsx
+~$*
